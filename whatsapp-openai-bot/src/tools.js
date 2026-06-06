@@ -5,94 +5,80 @@ import { sendForSignature } from './signature.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
 
-export const assistantTools = [
+export const tools = [
   {
-    type: 'function',
-    function: {
-      name: 'update_lead',
-      description:
-        'Salva ou atualiza dados estruturados do cliente coletados na conversa. Chame sempre que descobrir um dado novo.',
-      parameters: {
-        type: 'object',
-        properties: {
-          client_name: { type: 'string', description: 'Nome completo do cliente' },
-          case_type: {
-            type: 'string',
-            description: 'Categoria do caso (ex: trabalhista, civil, previdenciario, familia, criminal, tributario, consumidor)'
-          },
-          case_summary: { type: 'string', description: 'Resumo da demanda em até 3 frases' },
-          urgency: { type: 'string', enum: ['baixa', 'media', 'alta'] },
-          notes: { type: 'string', description: 'Observações livres relevantes' }
+    name: 'update_lead',
+    description:
+      'Salva ou atualiza dados estruturados do cliente coletados na conversa. Chame sempre que descobrir um dado novo (nome, tipo de caso, urgência, etc.).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        client_name: { type: 'string', description: 'Nome completo do cliente' },
+        case_type: {
+          type: 'string',
+          description:
+            'Categoria do caso (ex: trabalhista, civil, previdenciario, familia, criminal, tributario, consumidor)'
+        },
+        case_summary: { type: 'string', description: 'Resumo da demanda em até 3 frases' },
+        urgency: { type: 'string', enum: ['baixa', 'media', 'alta'] },
+        notes: { type: 'string', description: 'Observações livres relevantes' }
+      }
+    }
+  },
+  {
+    name: 'set_stage',
+    description:
+      'Avança o estágio do funil. Use "qualifying" quando começar a coletar dados, "proposal" quando estiver pronto para cotar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        stage: { type: 'string', enum: ['qualifying', 'proposal', 'contract', 'signed', 'lost'] },
+        notes: { type: 'string' }
+      },
+      required: ['stage']
+    }
+  },
+  {
+    name: 'send_proposal',
+    description:
+      'Envia uma proposta de honorários formatada ao cliente via WhatsApp e salva valor, condições e escopo no lead. Avança o estágio para "proposal".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        fee_amount: { type: 'number', description: 'Valor total em reais (BRL)' },
+        payment_terms: {
+          type: 'string',
+          description: 'Forma de pagamento (à vista, parcelado em X vezes no PIX/cartão, etc.)'
+        },
+        scope: { type: 'string', description: 'Descrição do escopo do serviço advocatício' }
+      },
+      required: ['fee_amount', 'payment_terms', 'scope']
+    }
+  },
+  {
+    name: 'send_contract',
+    description:
+      'Gera o contrato de honorários em PDF e envia o link para assinatura digital ao cliente. Chame somente após o cliente aceitar verbalmente a proposta.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        confirmation: {
+          type: 'string',
+          description: 'Trecho da fala do cliente aceitando a proposta'
         }
-      }
+      },
+      required: ['confirmation']
     }
   },
   {
-    type: 'function',
-    function: {
-      name: 'set_stage',
-      description:
-        'Avança o estágio do funil. Use "qualifying" quando começar a coletar dados, "proposal" quando já souber o que cobrar.',
-      parameters: {
-        type: 'object',
-        properties: {
-          stage: {
-            type: 'string',
-            enum: ['qualifying', 'proposal', 'contract', 'signed', 'lost']
-          },
-          notes: { type: 'string' }
-        },
-        required: ['stage']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'send_proposal',
-      description:
-        'Envia uma proposta de honorários ao cliente via WhatsApp. Salva escopo, valor e condições no lead.',
-      parameters: {
-        type: 'object',
-        properties: {
-          fee_amount: { type: 'number', description: 'Valor total em reais (BRL)' },
-          payment_terms: {
-            type: 'string',
-            description: 'Forma de pagamento (à vista, parcelado em X vezes no PIX/cartão, etc.)'
-          },
-          scope: { type: 'string', description: 'Descrição do escopo do serviço advocatício' }
-        },
-        required: ['fee_amount', 'payment_terms', 'scope']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'send_contract',
-      description:
-        'Gera o contrato de honorários em PDF e envia o link para assinatura digital. Chame somente após o cliente aceitar verbalmente a proposta.',
-      parameters: {
-        type: 'object',
-        properties: {
-          confirmation: { type: 'string', description: 'Trecho da fala do cliente aceitando a proposta' }
-        },
-        required: ['confirmation']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'mark_as_lost',
-      description: 'Marca o lead como perdido (sem perfil, desistiu, fora do escopo, etc.).',
-      parameters: {
-        type: 'object',
-        properties: {
-          reason: { type: 'string' }
-        },
-        required: ['reason']
-      }
+    name: 'mark_as_lost',
+    description: 'Marca o lead como perdido (sem perfil, desistiu, fora do escopo, etc.).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string' }
+      },
+      required: ['reason']
     }
   }
 ];
@@ -163,7 +149,10 @@ async function sendContractTool(phone, args) {
   const lead = getLead(phone);
   if (!lead) return { error: 'lead_not_found' };
   if (!lead.fee_amount || !lead.payment_terms || !lead.scope) {
-    return { error: 'missing_proposal_data', hint: 'Chame send_proposal antes de send_contract.' };
+    return {
+      error: 'missing_proposal_data',
+      hint: 'Chame send_proposal antes de send_contract.'
+    };
   }
 
   const pdfPath = await buildContractPdf(lead);
@@ -184,7 +173,10 @@ async function sendContractTool(phone, args) {
 
   await sendText(phone, message);
 
-  logger.info({ phone, contractId: sig.contractId, provider: sig.provider }, 'Contract sent for signature');
+  logger.info(
+    { phone, contractId: sig.contractId, provider: sig.provider },
+    'Contract sent for signature'
+  );
   return { ok: true, contract_id: sig.contractId, sign_url: sig.signUrl };
 }
 

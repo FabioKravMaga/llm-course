@@ -1,11 +1,12 @@
-import { getLead, createLead, updateLead, deleteLead } from './db.js';
-import { createThread, addUserMessage, runAndWait } from './openai.js';
+import { getLead, createLead, updateLead, deleteLead, getMessages, setMessages } from './db.js';
+import { runConversation, appendUserText } from './claude.js';
 import { sendText, setPresence } from './evolution.js';
 import { createDispatcher } from './tools.js';
 import { scheduleNextFollowUp } from './followup.js';
 import { logger } from './logger.js';
 
 const inFlight = new Map();
+const MAX_HISTORY_TURNS = 60;
 
 export function isBusy(phone) {
   return inFlight.has(phone);
@@ -60,9 +61,8 @@ async function process(phone, text) {
 
   let lead = getLead(phone);
   if (!lead) {
-    const threadId = await createThread();
-    lead = createLead(phone, threadId);
-    logger.info({ phone, threadId: lead.thread_id }, 'Created new lead');
+    lead = createLead(phone);
+    logger.info({ phone }, 'Created new lead');
   }
 
   updateLead(phone, {
@@ -73,10 +73,18 @@ async function process(phone, text) {
 
   setPresence(phone, 'composing');
 
-  await addUserMessage(lead.thread_id, text);
-  const reply = await runAndWait(lead.thread_id, createDispatcher(phone));
+  const history = appendUserText(getMessages(phone), text);
+  const { history: finalHistory, reply } = await runConversation(
+    history,
+    createDispatcher(phone)
+  );
 
-  if (reply) await sendText(phone, reply);
+  setMessages(phone, trimHistory(finalHistory));
+
+  if (reply) {
+    await sendText(phone, reply);
+    updateLead(phone, { last_outbound_at: Date.now() });
+  }
 
   const fresh = getLead(phone);
   if (fresh && !['signed', 'lost'].includes(fresh.stage)) {
@@ -86,16 +94,29 @@ async function process(phone, text) {
   return { phone, stage: fresh?.stage, replyChars: reply?.length || 0 };
 }
 
+function trimHistory(history) {
+  if (history.length <= MAX_HISTORY_TURNS) return history;
+  const start = history.length - MAX_HISTORY_TURNS;
+  for (let i = start; i < history.length; i++) {
+    const m = history[i];
+    if (m.role === 'user' && typeof m.content === 'string') {
+      return history.slice(i);
+    }
+  }
+  return history;
+}
+
 export async function runFollowUp(lead, message) {
   if (inFlight.has(lead.phone)) return { skipped: true, reason: 'busy' };
 
   const job = (async () => {
     await sendText(lead.phone, message);
-    const nextCount = lead.follow_up_count + 1;
-    await addUserMessage(
-      lead.thread_id,
-      `[SISTEMA] Follow-up automático #${nextCount} enviado ao cliente: "${message}"`
-    ).catch(() => {});
+    const messages = getMessages(lead.phone);
+    messages.push({
+      role: 'user',
+      content: `[SISTEMA] Follow-up automático enviado ao cliente: "${message}"`
+    });
+    setMessages(lead.phone, trimHistory(messages));
     return { sent: true };
   })().finally(() => inFlight.delete(lead.phone));
 

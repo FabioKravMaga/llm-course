@@ -11,7 +11,6 @@ db.pragma('journal_mode = WAL');
 db.exec(`
   CREATE TABLE IF NOT EXISTS leads (
     phone              TEXT PRIMARY KEY,
-    thread_id          TEXT NOT NULL,
     stage              TEXT NOT NULL DEFAULT 'new',
     client_name        TEXT,
     case_type          TEXT,
@@ -29,6 +28,7 @@ db.exec(`
     follow_up_count    INTEGER NOT NULL DEFAULT 0,
     follow_up_next_at  INTEGER,
     notes              TEXT,
+    messages_json      TEXT NOT NULL DEFAULT '[]',
     created_at         INTEGER NOT NULL,
     updated_at         INTEGER NOT NULL
   );
@@ -38,10 +38,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage);
 `);
 
+const tryAddColumn = (sql) => {
+  try { db.exec(sql); } catch { /* column exists */ }
+};
+tryAddColumn(`ALTER TABLE leads ADD COLUMN messages_json TEXT NOT NULL DEFAULT '[]'`);
+
 const selectStmt = db.prepare('SELECT * FROM leads WHERE phone = ?');
 const insertStmt = db.prepare(`
-  INSERT INTO leads (phone, thread_id, stage, created_at, updated_at)
-  VALUES (?, ?, 'new', ?, ?)
+  INSERT INTO leads (phone, stage, messages_json, created_at, updated_at)
+  VALUES (?, 'new', '[]', ?, ?)
 `);
 const deleteStmt = db.prepare('DELETE FROM leads WHERE phone = ?');
 const dueFollowUpStmt = db.prepare(`
@@ -55,7 +60,6 @@ const dueFollowUpStmt = db.prepare(`
 const findByContractStmt = db.prepare('SELECT * FROM leads WHERE contract_id = ?');
 
 const updatableFields = new Set([
-  'thread_id',
   'stage',
   'client_name',
   'case_type',
@@ -72,16 +76,17 @@ const updatableFields = new Set([
   'last_outbound_at',
   'follow_up_count',
   'follow_up_next_at',
-  'notes'
+  'notes',
+  'messages_json'
 ]);
 
 export function getLead(phone) {
   return selectStmt.get(phone) || null;
 }
 
-export function createLead(phone, threadId) {
+export function createLead(phone) {
   const now = Date.now();
-  insertStmt.run(phone, threadId, now, now);
+  insertStmt.run(phone, now, now);
   return getLead(phone);
 }
 
@@ -108,4 +113,18 @@ export function findLeadByContract(contractId) {
 
 export function dueFollowUps(now = Date.now()) {
   return dueFollowUpStmt.all(now);
+}
+
+export function getMessages(phone) {
+  const lead = getLead(phone);
+  if (!lead) return [];
+  try {
+    return JSON.parse(lead.messages_json || '[]');
+  } catch {
+    return [];
+  }
+}
+
+export function setMessages(phone, messages) {
+  updateLead(phone, { messages_json: JSON.stringify(messages) });
 }

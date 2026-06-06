@@ -1,22 +1,21 @@
 {
   "name": "whatsapp-openai-bot",
-  "version": "1.1.0",
-  "description": "WhatsApp sales bot for legal services — qualifies, quotes and closes contracts via OpenAI Assistants + Evolution API",
+  "version": "2.0.0",
+  "description": "WhatsApp sales bot for legal services — qualifies, quotes and closes contracts via Anthropic Claude + Evolution API",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "setup:assistant": "node scripts/setup-assistant.js"
+    "dev": "node --watch src/server.js"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.65.0",
     "better-sqlite3": "^11.3.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
-    "openai": "^4.67.0",
     "pdfkit": "^0.15.0",
     "pino": "^9.4.0",
     "undici": "^6.20.0"
