@@ -1,31 +1,57 @@
 # whatsapp-openai-bot
 
-Bridge entre **WhatsApp** (via [Evolution API](https://github.com/EvolutionAPI/evolution-api)) e a **OpenAI Assistants API**, com memória de conversa por número de telefone em SQLite.
+Bot de **captação jurídica via WhatsApp** que leva o cliente do primeiro "oi" até o **contrato de honorários assinado digitalmente** — sem intervenção humana. Usa OpenAI Assistants com function calling para conduzir o funil, [Evolution API](https://github.com/EvolutionAPI/evolution-api) como bridge do WhatsApp, ZapSign para assinatura, e um scheduler de follow-ups para recuperar clientes que ficam em silêncio.
+
+## Funil
+
+```
+new → qualifying → proposal → contract → signed
+                                       ↘ lost (sem resposta após follow-ups, ou desistência)
+```
+
+Cada estágio fica persistido em SQLite (uma linha por número de telefone). Cada cliente tem sua própria thread do Assistant, então a memória da conversa é por pessoa.
 
 ## Stack
 
 - **Evolution API** (Docker) — gateway do WhatsApp via Baileys
-- **Node.js 20 + Express** — webhook que recebe a mensagem, chama o Assistant e devolve a resposta
-- **SQLite** (via `better-sqlite3`) — uma thread OpenAI por número de telefone
-- **PM2** — manter o bot online com restart automático
+- **Node.js 20 + Express** — webhook + orquestração
+- **OpenAI Assistants API** — conversa + function calling (tools: `update_lead`, `set_stage`, `send_proposal`, `send_contract`, `mark_as_lost`)
+- **SQLite** (`better-sqlite3`) — leads, funil, threads, agendamento de follow-up
+- **pdfkit** — gera o contrato de honorários
+- **ZapSign** (default) ou mock — assinatura digital
+- **PM2** — keep-alive
 
 ## Fluxo
 
 ```
-WhatsApp → Evolution API (8080) → POST /webhook → bot (3000) → OpenAI Assistants → resposta → Evolution → WhatsApp
+WhatsApp ─→ Evolution API ─→ POST /webhook ─→ bot
+                                              ├─→ atualiza lead (last_inbound_at, reset follow_up)
+                                              ├─→ OpenAI Assistant (com tools)
+                                              │     ├─ update_lead → grava nome/caso/urgência
+                                              │     ├─ set_stage   → avança funil
+                                              │     ├─ send_proposal → envia proposta formatada
+                                              │     ├─ send_contract → gera PDF + ZapSign + link
+                                              │     └─ mark_as_lost
+                                              └─→ envia resposta no WhatsApp
+                                              
+Scheduler (a cada 5 min) ─→ leads em silêncio ─→ follow-up por estágio
+                                              ─→ após N tentativas → marca como lost
+
+ZapSign ─ webhook "doc_signed" ─→ POST /sign-webhook ─→ lead = signed → mensagem de confirmação
 ```
 
 ## Instalação rápida
 
-Veja [SETUP.md](./SETUP.md) — 12 passos do zero numa VPS Ubuntu/Debian.
+Veja [SETUP.md](./SETUP.md) — 12 passos de uma VPS limpa até bot fechando contratos.
 
 ```bash
 git clone https://github.com/FabioKravMaga/llm-course.git
 cd llm-course/whatsapp-openai-bot
 bash scripts/install.sh
 cp .env.example .env && nano .env
-docker compose --env-file .env up -d
 npm install
+npm run setup:assistant    # cria Assistant com tools e prompt jurídico
+docker compose --env-file .env up -d
 pm2 start ecosystem.config.js
 ```
 
@@ -33,40 +59,63 @@ pm2 start ecosystem.config.js
 
 ```
 whatsapp-openai-bot/
-├── docker-compose.yml      # Evolution API + Postgres + Redis
-├── ecosystem.config.js     # PM2
+├── docker-compose.yml       # Evolution API + Postgres + Redis
+├── ecosystem.config.js      # PM2
 ├── package.json
 ├── .env.example
 ├── scripts/
-│   └── install.sh          # Instala Docker, Node 20, PM2
-├── SETUP.md                # Guia passo a passo
+│   ├── install.sh           # Docker, Node 20, PM2
+│   └── setup-assistant.js   # cria/atualiza Assistant com tools + prompt
+├── SETUP.md
 └── src/
-    ├── server.js           # Express + webhook
-    ├── config.js           # Lê e valida .env
-    ├── handler.js          # Parser de evento + orquestração
-    ├── openai.js           # Cliente Assistants API
-    ├── evolution.js        # Cliente Evolution API
-    ├── db.js               # SQLite (threads por número)
-    └── logger.js           # pino
+    ├── server.js            # Express: /webhook, /sign-webhook, /health
+    ├── config.js
+    ├── handler.js           # Parser + orquestração inbound
+    ├── followup.js          # Scheduler de follow-ups por estágio
+    ├── tools.js             # Tool schemas + dispatcher (function calling)
+    ├── openai.js            # Assistant runs com requires_action
+    ├── evolution.js         # Cliente Evolution API
+    ├── contract.js          # Geração de PDF (pdfkit)
+    ├── signature.js         # ZapSign + provedor mock
+    ├── db.js                # SQLite (leads)
+    └── logger.js
 ```
+
+## Follow-up automático
+
+Após cada mensagem do bot, agenda o próximo follow-up. Resposta do cliente zera o contador. Padrão:
+
+| Tentativa | Atraso |
+|---|---|
+| 1ª | 4h |
+| 2ª | 24h |
+| 3ª | 72h, depois marca `lost` |
+
+Configurável via `FOLLOWUP_DELAYS_MS` (ms separados por vírgula). Mensagens por estágio em `src/followup.js`.
 
 ## Comandos em chat
 
 | Comando | Efeito |
 |---|---|
-| `/reset` | Apaga a thread atual desse número; próxima mensagem cria uma nova |
+| `/reset` | Apaga o lead e a thread desse número |
 
-## Variáveis de ambiente
+## Tools (function calling)
 
-| Var | Obrigatória | Default | Descrição |
-|---|---|---|---|
-| `OPENAI_API_KEY` | sim | — | Chave da OpenAI |
-| `ASSISTANT_ID` | sim | — | ID do Assistant (`asst_...`) |
-| `EVOLUTION_URL` | não | `http://localhost:8080` | URL da Evolution API |
-| `EVOLUTION_API_KEY` | sim | — | Auth da Evolution |
-| `EVOLUTION_INSTANCE` | sim | — | Nome da instância criada na Evolution |
-| `PORT` | não | `3000` | Porta do webhook |
-| `WEBHOOK_TOKEN` | recomendada | — | Token no path `/webhook/:token` |
-| `DB_PATH` | não | `./data/threads.db` | Caminho do SQLite |
-| `RUN_TIMEOUT_MS` | não | `60000` | Timeout do run do Assistant |
-| `LOG_LEVEL` | não | `info` | `debug` \| `info` \| `warn` \| `error` |
+| Tool | Quando o Assistant chama | Efeito |
+|---|---|---|
+| `update_lead` | A cada dado novo coletado | Grava nome, tipo de caso, resumo, urgência |
+| `set_stage` | Ao avançar o funil | Atualiza estágio |
+| `send_proposal` | Quando pronto para cotar | Envia proposta formatada no WhatsApp + persiste valor/condições |
+| `send_contract` | Quando cliente aceita verbalmente | Gera PDF → ZapSign → manda link de assinatura |
+| `mark_as_lost` | Desistência / fora de escopo | Encerra o lead |
+
+## Provedor de assinatura
+
+- `SIGNATURE_PROVIDER=mock` (default): retorna URL fake — útil para testar sem custo.
+- `SIGNATURE_PROVIDER=zapsign`: usa a API ZapSign + webhook `doc_signed` em `/sign-webhook`.
+
+Para trocar de provedor (ex: Clicksign, D4Sign), adicione uma função em `src/signature.js` e roteie via `SIGNATURE_PROVIDER`.
+
+## Variáveis de ambiente principais
+
+Veja [`.env.example`](./.env.example) para a lista completa. Obrigatórias: `OPENAI_API_KEY`, `ASSISTANT_ID`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE`.

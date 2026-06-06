@@ -1,22 +1,42 @@
 # WhatsApp + OpenAI Assistants Bot — Setup (12 passos)
 
-Stack: **Evolution API (Docker) → Node.js webhook → OpenAI Assistants API → SQLite (memória por número) → PM2**.
+Bot completo de captação jurídica via WhatsApp: **qualifica, propõe honorários, gera contrato em PDF, envia para assinatura digital e fecha o atendimento automaticamente**. Quando o cliente fica em silêncio, o bot faz follow-ups programados; se não responder, marca como perdido.
 
-Fluxo:
+Stack: **Evolution API (Docker) → Node.js webhook → OpenAI Assistants (tools) → SQLite (funil por número) → PM2 → ZapSign (assinatura)**.
+
 ```
-WhatsApp → Evolution API (8080) → /webhook → Node.js (3000) → OpenAI Assistants → resposta → Evolution API → WhatsApp
+WhatsApp → Evolution API → /webhook → Bot → OpenAI Assistant ⟷ tools (atualiza lead, envia proposta, gera contrato)
+                                                                          ↓
+                                                              PDF → ZapSign → cliente assina
+                                                                          ↓
+                                                              /sign-webhook → lead = signed
 ```
+
+## Funil
+
+| Estágio | O que acontece |
+|---|---|
+| `new` | Primeiro contato. Assistant cumprimenta e abre. |
+| `qualifying` | Coleta nome, tipo de caso, resumo, urgência. |
+| `proposal` | Envia proposta (valor, condições, escopo) via tool `send_proposal`. |
+| `contract` | Gera PDF e envia link de assinatura (`send_contract`). |
+| `signed` | Marcado automaticamente pelo webhook da ZapSign. |
+| `lost` | `mark_as_lost` ou esgotamento dos follow-ups. |
+
+## Follow-up
+
+Após cada mensagem do bot, agenda o próximo follow-up. Quando o cliente responde, o contador zera. Padrão: **4h → 24h → 72h** e então marca como `lost`. Mensagens variam por estágio (definidas em `src/followup.js`).
 
 ---
 
 ## Antes de começar — você precisa ter em mãos
 
-1. `OPENAI_API_KEY` — gere em https://platform.openai.com/api-keys
-2. `ASSISTANT_ID` — começa com `asst_...`, criado em https://platform.openai.com/assistants
-3. IP público do servidor — rode `curl ifconfig.me` no VPS
-4. Acesso SSH com usuário sudo (não root puro, idealmente)
+1. `OPENAI_API_KEY` — https://platform.openai.com/api-keys
+2. IP público do servidor — `curl ifconfig.me`
+3. Acesso SSH com usuário sudo
+4. (Opcional, mas recomendado) Conta ZapSign + token de API — https://app.zapsign.com.br
 
-> O bot lê threads por número de telefone e persiste em SQLite, então cada usuário no WhatsApp mantém seu próprio histórico de conversa com o Assistant.
+> O Assistant é criado/atualizado **pelo script `npm run setup:assistant`** com as ferramentas certas. Não precisa configurar tools manualmente na UI.
 
 ---
 
@@ -40,15 +60,10 @@ cd llm-course/whatsapp-openai-bot
 bash scripts/install.sh
 ```
 
-Se for a primeira vez que o usuário entra no grupo `docker`, faça **logout/login** antes de continuar (ou rode com `sudo` os comandos `docker compose`).
-
-Verifique:
+Faça **logout/login** se for a primeira vez (para entrar no grupo `docker`). Verifique:
 
 ```bash
-docker --version
-docker compose version
-node -v   # >= 18
-pm2 -v
+docker --version && docker compose version && node -v && pm2 -v
 ```
 
 ## Passo 4 — Configurar variáveis de ambiente
@@ -58,68 +73,66 @@ cp .env.example .env
 nano .env
 ```
 
-Preencha:
+Preencha pelo menos:
 
 ```env
-OPENAI_API_KEY=sk-...                   # do passo "Antes de começar"
-ASSISTANT_ID=asst_...
-EVOLUTION_URL=http://localhost:8080
-EVOLUTION_API_KEY=GERE_UMA_CHAVE_FORTE  # ex: openssl rand -hex 32
+OPENAI_API_KEY=sk-...
+EVOLUTION_API_KEY=$(openssl rand -hex 32)
 EVOLUTION_INSTANCE=whatsapp-bot
-PORT=3000
-WEBHOOK_TOKEN=GERE_OUTRA_CHAVE          # protege o endpoint /webhook
-DB_PATH=./data/threads.db
+WEBHOOK_TOKEN=$(openssl rand -hex 32)
+
+LAWYER_NAME=Seu Escritório
+LAWYER_OAB=SP 000.000
+LAWYER_DOCUMENT=000.000.000-00
+LAWYER_ADDRESS=Rua Exemplo, 123 — São Paulo/SP
+LAWYER_EMAIL=fabioadvogado@gmail.com
+LAWYER_PIX_KEY=fabioadvogado@gmail.com
+
+# Comece com mock; troque para zapsign quando configurar
+SIGNATURE_PROVIDER=mock
 ```
 
-Gere chaves fortes com:
+Deixe `ASSISTANT_ID` em branco por enquanto — o passo 5 preenche.
+
+## Passo 5 — Criar o Assistant (com tools e prompt)
 
 ```bash
-openssl rand -hex 32
+npm install
+node --version  # >= 18
+npm run setup:assistant
 ```
 
-## Passo 5 — Subir Evolution API + Postgres + Redis
+A saída inclui `ASSISTANT_ID=asst_...`. Cole no `.env`:
 
-A Evolution lê `EVOLUTION_API_KEY` do mesmo `.env`:
+```bash
+nano .env  # cole o ASSISTANT_ID
+```
+
+> Se já tinha um Assistant, defina `ASSISTANT_ID` antes de rodar o script — ele atualiza em vez de criar.
+
+## Passo 6 — Subir Evolution API + Postgres + Redis
 
 ```bash
 docker compose --env-file .env up -d
 docker compose ps
-```
-
-Aguarde uns 20s e teste:
-
-```bash
 curl -s http://localhost:8080 | head
 ```
 
-Deve retornar um JSON com `status: 200`.
-
-## Passo 6 — Criar a instância do WhatsApp na Evolution
+## Passo 7 — Criar a instância e parear o WhatsApp
 
 ```bash
 source .env
+
 curl -s -X POST "http://localhost:8080/instance/create" \
   -H "Content-Type: application/json" \
   -H "apikey: $EVOLUTION_API_KEY" \
-  -d "{
-    \"instanceName\": \"$EVOLUTION_INSTANCE\",
-    \"qrcode\": true,
-    \"integration\": \"WHATSAPP-BAILEYS\"
-  }"
-```
+  -d "{\"instanceName\":\"$EVOLUTION_INSTANCE\",\"qrcode\":true,\"integration\":\"WHATSAPP-BAILEYS\"}"
 
-## Passo 7 — Conectar o WhatsApp (escanear o QR code)
-
-Pegue o QR code (ASCII):
-
-```bash
 curl -s "http://localhost:8080/instance/connect/$EVOLUTION_INSTANCE" \
   -H "apikey: $EVOLUTION_API_KEY"
 ```
 
-Use o campo `code` (base64) ou abra `http://SEU_IP:8080/manager` no navegador e escaneie com o WhatsApp do celular: **Aparelhos conectados → Conectar um aparelho**.
-
-Confira que conectou:
+Ou abra `http://SEU_IP:8080/manager` no navegador e escaneie o QR. Depois confira:
 
 ```bash
 curl -s "http://localhost:8080/instance/connectionState/$EVOLUTION_INSTANCE" \
@@ -128,13 +141,7 @@ curl -s "http://localhost:8080/instance/connectionState/$EVOLUTION_INSTANCE" \
 
 Quer ver `"state":"open"`.
 
-## Passo 8 — Instalar dependências do bot
-
-```bash
-npm install
-```
-
-## Passo 9 — Apontar o webhook da Evolution para o bot
+## Passo 8 — Apontar o webhook da Evolution para o bot
 
 ```bash
 source .env
@@ -146,68 +153,92 @@ curl -s -X POST "http://localhost:8080/webhook/set/$EVOLUTION_INSTANCE" \
       \"enabled\": true,
       \"url\": \"http://host.docker.internal:$PORT/webhook/$WEBHOOK_TOKEN\",
       \"webhookByEvents\": false,
-      \"webhookBase64\": false,
       \"events\": [\"MESSAGES_UPSERT\"]
     }
   }"
 ```
 
-> Se `host.docker.internal` não resolver no seu Linux, troque por o IP do gateway do bridge (geralmente `172.17.0.1`) ou rode o bot dentro do mesmo `docker compose`.
+Se `host.docker.internal` não resolver, troque por `172.17.0.1`.
 
-## Passo 10 — Subir o bot com PM2
+## Passo 9 — Subir o bot com PM2
 
 ```bash
-mkdir -p logs data
+mkdir -p logs data data/contracts
 pm2 start ecosystem.config.js
 pm2 save
-pm2 startup systemd -u $USER --hp $HOME   # copie/cole o comando que ele imprimir
-```
-
-Verifique:
-
-```bash
-pm2 status
-pm2 logs whatsapp-openai-bot --lines 50
+pm2 startup systemd -u $USER --hp $HOME   # copie/cole o comando que aparecer
+pm2 logs whatsapp-openai-bot --lines 30
 curl -s http://localhost:3000/health
 ```
 
-## Passo 11 — Firewall (UFW)
+## Passo 10 — (Opcional, mas necessário para fechar contrato sozinho) Configurar ZapSign
 
-Só exponha o que é necessário. O webhook é interno (Docker → bot), então **não precisa abrir a porta 3000**.
+1. Crie conta em https://app.zapsign.com.br e gere o token em **Conta → API**.
+2. No `.env`:
+   ```env
+   SIGNATURE_PROVIDER=zapsign
+   ZAPSIGN_TOKEN=zs_live_...
+   ZAPSIGN_WEBHOOK_SECRET=$(openssl rand -hex 32)
+   PUBLIC_BASE_URL=https://bot.seudominio.com    # opcional, para mock
+   ```
+3. Reinicie: `pm2 restart whatsapp-openai-bot`.
+4. No painel ZapSign → **Configurações → Webhook**, cadastre:
+   - URL: `https://bot.seudominio.com/sign-webhook` (precisa estar publicado com HTTPS)
+   - Evento: `doc_signed`
+   - Secret: o mesmo `ZAPSIGN_WEBHOOK_SECRET` do `.env`
+
+> Sem HTTPS público você ainda pode usar a ZapSign — só não vai receber o webhook automático. Nesse caso confira a assinatura manualmente e marque o lead em SQLite.
+
+## Passo 11 — Firewall (UFW)
 
 ```bash
 sudo ufw allow OpenSSH
-sudo ufw allow 8080/tcp   # apenas se for usar o /manager via navegador; senão omita
+# Apenas se for expor /manager ou /sign-webhook diretamente (use Nginx+HTTPS por cima):
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 sudo ufw enable
-sudo ufw status
 ```
 
-> Se for expor a Evolution publicamente, ponha um Nginx com HTTPS na frente — não deixe a porta 8080 aberta para o mundo sem TLS.
+Não exponha 3000/8080 direto sem TLS.
 
 ## Passo 12 — Teste end-to-end
 
-Mande uma mensagem no WhatsApp do seu Assistant. No servidor:
+Mande "Olá, preciso de ajuda" do seu WhatsApp para o número pareado. Acompanhe:
 
 ```bash
 pm2 logs whatsapp-openai-bot
+sqlite3 data/threads.db 'SELECT phone, stage, client_name, fee_amount FROM leads;'
 ```
 
-Você deve ver: `Created new thread` (primeira vez) → resposta enviada. No celular: a resposta do Assistant chega.
+Você deve ver o lead progredir: `new → qualifying → proposal → contract → signed`.
 
-### Comandos úteis
+---
+
+## Comandos úteis
 
 | O que | Comando |
 |---|---|
-| Resetar memória de um número | mande `/reset` no chat |
+| Resetar a conversa | mande `/reset` no chat |
+| Ver funil completo | `sqlite3 data/threads.db 'SELECT phone, stage, follow_up_count, follow_up_next_at FROM leads;'` |
+| Forçar follow-up agora | `sqlite3 data/threads.db "UPDATE leads SET follow_up_next_at=strftime('%s','now')*1000 WHERE phone='5511...';"` |
+| Recriar Assistant após mudar tools | `npm run setup:assistant` |
 | Restart do bot | `pm2 restart whatsapp-openai-bot` |
 | Logs em tempo real | `pm2 logs whatsapp-openai-bot` |
 | Restart da Evolution | `docker compose restart evolution-api` |
-| Ver threads salvas | `sqlite3 data/threads.db 'SELECT * FROM threads;'` |
 | Atualizar o bot | `git pull && npm install && pm2 restart whatsapp-openai-bot` |
 
-### Troubleshooting
+## Customização
 
-- **Webhook não chega**: confira `pm2 logs` e o endereço no passo 9. Teste de dentro do container: `docker exec -it evolution-api wget -qO- http://host.docker.internal:3000/health`.
-- **OpenAI 401**: `OPENAI_API_KEY` errada ou sem créditos.
-- **Run timeout**: aumente `RUN_TIMEOUT_MS` no `.env`. Assistants com tools/file_search demoram mais.
-- **"busy" nos logs**: mensagens chegando antes do run anterior terminar — esperado, o bot ignora pra não bagunçar a thread.
+- **Mensagens de follow-up**: edite o objeto `messagesByStage` em `src/followup.js`.
+- **Atrasos**: `FOLLOWUP_DELAYS_MS` no `.env` (ms separados por vírgula).
+- **Modelo de contrato**: `src/contract.js` — cláusulas e layout.
+- **Prompt e regras do Assistant**: `scripts/setup-assistant.js` (rode novamente após editar).
+- **Tools**: `src/tools.js` — para adicionar coleta de dados nova, crie outro tool e atualize a `dispatcher`.
+
+## Troubleshooting
+
+- **Webhook não chega**: `docker exec -it evolution-api wget -qO- http://host.docker.internal:3000/health`.
+- **Tool retorna erro `lead_not_found`**: o Assistant chamou `send_contract` antes de `send_proposal` — ajuste o prompt.
+- **PDF não abre**: verifique `data/contracts/` e permissões.
+- **Follow-up não dispara**: confirme `FOLLOWUP_ENABLED=true` e `follow_up_next_at` no SQLite.
+- **ZapSign 401**: token errado ou conta sem créditos.

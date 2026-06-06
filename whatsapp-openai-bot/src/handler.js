@@ -1,9 +1,15 @@
-import { getThreadId, saveThread, touchThread, resetThread } from './db.js';
+import { getLead, createLead, updateLead, deleteLead } from './db.js';
 import { createThread, addUserMessage, runAndWait } from './openai.js';
 import { sendText, setPresence } from './evolution.js';
+import { createDispatcher } from './tools.js';
+import { scheduleNextFollowUp } from './followup.js';
 import { logger } from './logger.js';
 
 const inFlight = new Map();
+
+export function isBusy(phone) {
+  return inFlight.has(phone);
+}
 
 export function parseMessage(event) {
   if (!event || event.event !== 'messages.upsert') return null;
@@ -47,24 +53,52 @@ export async function handleIncoming(event) {
 
 async function process(phone, text) {
   if (text.toLowerCase() === '/reset') {
-    resetThread(phone);
+    deleteLead(phone);
     await sendText(phone, 'Conversa reiniciada. Pode mandar a próxima mensagem.');
     return { reset: true };
   }
 
-  let threadId = getThreadId(phone);
-  if (!threadId) {
-    threadId = await createThread();
-    saveThread(phone, threadId);
-    logger.info({ phone, threadId }, 'Created new thread');
+  let lead = getLead(phone);
+  if (!lead) {
+    const threadId = await createThread();
+    lead = createLead(phone, threadId);
+    logger.info({ phone, threadId: lead.thread_id }, 'Created new lead');
   }
+
+  updateLead(phone, {
+    last_inbound_at: Date.now(),
+    follow_up_count: 0,
+    follow_up_next_at: null
+  });
 
   setPresence(phone, 'composing');
 
-  await addUserMessage(threadId, text);
-  const reply = await runAndWait(threadId);
-  touchThread(phone);
+  await addUserMessage(lead.thread_id, text);
+  const reply = await runAndWait(lead.thread_id, createDispatcher(phone));
 
-  await sendText(phone, reply);
-  return { phone, threadId, replyChars: reply.length };
+  if (reply) await sendText(phone, reply);
+
+  const fresh = getLead(phone);
+  if (fresh && !['signed', 'lost'].includes(fresh.stage)) {
+    scheduleNextFollowUp(phone, 0);
+  }
+
+  return { phone, stage: fresh?.stage, replyChars: reply?.length || 0 };
+}
+
+export async function runFollowUp(lead, message) {
+  if (inFlight.has(lead.phone)) return { skipped: true, reason: 'busy' };
+
+  const job = (async () => {
+    await sendText(lead.phone, message);
+    const nextCount = lead.follow_up_count + 1;
+    await addUserMessage(
+      lead.thread_id,
+      `[SISTEMA] Follow-up automático #${nextCount} enviado ao cliente: "${message}"`
+    ).catch(() => {});
+    return { sent: true };
+  })().finally(() => inFlight.delete(lead.phone));
+
+  inFlight.set(lead.phone, job);
+  return job;
 }

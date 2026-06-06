@@ -16,24 +16,53 @@ export async function addUserMessage(threadId, content) {
   });
 }
 
-export async function runAndWait(threadId) {
-  const run = await client.beta.threads.runs.create(threadId, {
+export async function runAndWait(threadId, dispatcher) {
+  let current = await client.beta.threads.runs.create(threadId, {
     assistant_id: config.assistantId
   });
 
   const deadline = Date.now() + config.runTimeoutMs;
-  let current = run;
-  while (['queued', 'in_progress', 'cancelling'].includes(current.status)) {
-    if (Date.now() > deadline) {
-      await client.beta.threads.runs.cancel(threadId, current.id).catch(() => {});
-      throw new Error(`Run ${current.id} timed out after ${config.runTimeoutMs}ms`);
-    }
-    await sleep(800);
-    current = await client.beta.threads.runs.retrieve(threadId, current.id);
-  }
 
-  if (current.status !== 'completed') {
-    logger.error({ runId: current.id, status: current.status, last_error: current.last_error }, 'Run did not complete');
+  while (true) {
+    if (['queued', 'in_progress', 'cancelling'].includes(current.status)) {
+      if (Date.now() > deadline) {
+        await client.beta.threads.runs.cancel(threadId, current.id).catch(() => {});
+        throw new Error(`Run ${current.id} timed out after ${config.runTimeoutMs}ms`);
+      }
+      await sleep(800);
+      current = await client.beta.threads.runs.retrieve(threadId, current.id);
+      continue;
+    }
+
+    if (current.status === 'requires_action') {
+      const calls = current.required_action?.submit_tool_outputs?.tool_calls || [];
+      const outputs = [];
+      for (const call of calls) {
+        let output;
+        try {
+          const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+          const result = dispatcher
+            ? await dispatcher(call.function.name, args)
+            : { error: 'no dispatcher' };
+          output = JSON.stringify(result ?? { ok: true });
+        } catch (err) {
+          logger.error({ err: err.message, tool: call.function.name }, 'Tool dispatch failed');
+          output = JSON.stringify({ error: err.message });
+        }
+        outputs.push({ tool_call_id: call.id, output });
+      }
+      current = await client.beta.threads.runs.submitToolOutputs(threadId, current.id, {
+        tool_outputs: outputs
+      });
+      continue;
+    }
+
+    if (current.status === 'completed') break;
+
+    logger.error(
+      { runId: current.id, status: current.status, last_error: current.last_error },
+      'Run did not complete'
+    );
     throw new Error(`Run ended with status ${current.status}`);
   }
 
