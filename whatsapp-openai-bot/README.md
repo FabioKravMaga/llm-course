@@ -47,6 +47,7 @@ ZapSign ─ webhook "doc_signed" ─→ POST /sign-webhook ─→ lead = signed 
 ## Instalação rápida
 
 Veja [SETUP.md](./SETUP.md) — 11 passos de uma VPS limpa até bot fechando contratos.
+Para o plano completo de implantação (fases, executores, critérios de aceite e prompts prontos para agente), veja [ROADMAP.md](./ROADMAP.md).
 
 ```bash
 git clone https://github.com/FabioKravMaga/llm-course.git
