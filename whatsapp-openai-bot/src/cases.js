@@ -4,6 +4,7 @@ export const CASE_TYPE_IDS = [
   'restabelecimento_auxilio',
   'aposentadoria_invalidez',
   'planejamento_previdenciario',
+  'revisao_aposentadoria',
   'midias_sociais',
   'outro'
 ];
@@ -222,14 +223,57 @@ Posso dar início agora. Qual é o seu nome completo?`,
     }
   },
 
-  midias_sociais: {
+  revisao_aposentadoria: {
     number: 6,
-    label: 'Preciso de ajuda com mídias sociais (gestão, conteúdo, presença digital)',
+    label:
+      'Já sou aposentado e quero revisar meu benefício (incluindo ganhos de ação trabalhista no cálculo)',
     keywords:
-      /mídias sociais|midias sociais|instagram|rede social|redes sociais|conteúdo|conteudo|seguidores|marketing digital|presença digital|stories|reels/i,
+      /revis(ar|ão|ao).*aposent|aposentadoria.*revis|revis(ar|ão|ao).*benef|benef.*revis|ganhei.*trabalhista.*aposent|ação trabalhista.*inss|acao trabalhista.*inss|incluir.*trabalhista.*c[aá]lculo|verbas.*reconhecidas.*aposent|salário.*maior.*aposentadoria|recalcul.*aposent/i,
+    thesis: [
+      'Ótima iniciativa! Muitos aposentados recebem menos do que teriam direito — e isso pode ser corrigido. 📈',
+      `A *revisão de aposentadoria* verifica se o INSS calculou seu benefício corretamente. Um dos casos mais fortes é quando você *ganhou uma ação trabalhista* (vínculo ou verbas reconhecidas) e esses valores *não entraram no cálculo* do seu benefício.
+
+✅ Com a revisão, buscamos:
+• *Recálculo do benefício* incluindo os salários e períodos reconhecidos na Justiça do Trabalho
+• *Aumento definitivo* do valor mensal da aposentadoria
+• Pagamento das *diferenças retroativas* (até 5 anos para trás)
+
+Para avaliar seu caso, me conta:
+
+1️⃣ Quando você se aposentou e qual o valor atual do benefício?
+2️⃣ Você teve alguma ação trabalhista ganha? (vínculo, salário, verbas reconhecidas)
+3️⃣ Tem a sentença ou os documentos da ação trabalhista?`
+    ],
+    proposal: `Pelo que você relatou, há *bons elementos para a revisão do seu benefício*. ✅
+
+*O que fazemos:*
+• Análise do cálculo original do INSS e da sentença trabalhista
+• Recálculo do benefício com a inclusão dos valores reconhecidos
+• Pedido administrativo e, se necessário, ação judicial de revisão
+• Cobrança das *diferenças retroativas* dos últimos 5 anos
+
+*Modelo de honorários:* percentual sobre as diferenças retroativas recebidas — sem custo antecipado.
+
+Posso preparar o contrato agora. Qual é o seu nome completo?`,
+    feeModel: 'percentual sobre as diferenças retroativas recebidas — sem custo antecipado',
+    scope:
+      'Revisão de benefício previdenciário com inclusão de verbas e períodos reconhecidos em ação trabalhista no cálculo, cobrança das diferenças retroativas e majoração definitiva da renda mensal.',
+    followUp: {
+      socialProof:
+        'recentemente um cliente aposentado incluiu no cálculo os salários reconhecidos numa ação trabalhista — o benefício subiu e ele recebeu as diferenças de 5 anos de uma vez',
+      urgency:
+        'as diferenças retroativas prescrevem: cada mês que passa é um mês de atrasados que você perde o direito de cobrar'
+    }
+  },
+
+  midias_sociais: {
+    number: 7,
+    label: 'Preciso de ajuda com mídias sociais — parceria SmartAdv (gestão, conteúdo, presença digital)',
+    keywords:
+      /mídias sociais|midias sociais|smartadv|smart adv|instagram|rede social|redes sociais|conteúdo|conteudo|seguidores|marketing digital|presença digital|stories|reels/i,
     thesis: [
       'Que bom que chegou até aqui! 🚀',
-      `Ajudamos profissionais e negócios a construírem *presença digital estratégica*: posicionamento, conteúdo que atrai clientes e sistemas de captação pelo Instagram e WhatsApp.
+      `Em parceria com a *SmartAdv*, ajudamos profissionais e negócios a construírem *presença digital estratégica*: posicionamento, conteúdo que atrai clientes e sistemas de captação pelo Instagram e WhatsApp.
 
 ✅ O que entregamos:
 • *Estratégia de conteúdo* personalizada para o seu nicho
@@ -243,19 +287,19 @@ Para entender como podemos ajudar, me conta:
 2️⃣ Você já produz conteúdo hoje? Em quais redes?
 3️⃣ Qual seu principal objetivo? (mais seguidores, mais clientes, autoridade)`
     ],
-    proposal: `Ótimo! Com base no seu perfil, temos um caminho claro para acelerar seus resultados. ✅
+    proposal: `Ótimo! Com base no seu perfil, temos um caminho claro para acelerar seus resultados — em parceria com a *SmartAdv*. ✅
 
 *Como funciona:*
 • Diagnóstico gratuito da sua presença digital atual
 • Proposta de estratégia personalizada (conteúdo + captação)
-• Acompanhamento mensal com métricas e ajustes
+• Acompanhamento mensal com métricas e ajustes, com a equipe SmartAdv
 
 *Investimento:* planos a partir de valor mensal fixo — apresentados no diagnóstico.
 
 Posso agendar seu diagnóstico gratuito. Qual é o seu nome completo?`,
-    feeModel: 'plano mensal fixo — valor apresentado após diagnóstico gratuito',
+    feeModel: 'plano mensal fixo (parceria SmartAdv) — valor apresentado após diagnóstico gratuito',
     scope:
-      'Consultoria e gestão de presença digital: estratégia de conteúdo, criativos, sistema de captação e acompanhamento mensal.',
+      'Consultoria e gestão de presença digital em parceria com a SmartAdv: estratégia de conteúdo, criativos, sistema de captação e acompanhamento mensal.',
     followUp: {
       socialProof:
         'um cliente que começou o acompanhamento há 3 meses já está captando clientes direto pelo Instagram, sem depender de indicação',
@@ -265,7 +309,7 @@ Posso agendar seu diagnóstico gratuito. Qual é o seu nome completo?`,
   },
 
   outro: {
-    number: 7,
+    number: 8,
     label: 'Outro assunto',
     keywords: /outro|outra coisa|diferente/i,
     thesis: [
@@ -296,8 +340,9 @@ export const MENU_CASOS = `Para agilizar, você se identifica em alguma dessas s
 3️⃣ *Meu auxílio-doença foi cortado* pelo INSS e quero restabelecer
 4️⃣ *Recebo auxílio-doença* mas não tenho condições de voltar a trabalhar (aposentadoria por invalidez)
 5️⃣ *Quero planejar minha aposentadoria* da melhor forma
-6️⃣ *Preciso de ajuda com mídias sociais* (gestão, conteúdo, presença digital)
-7️⃣ *Outro assunto*
+6️⃣ *Já sou aposentado e quero revisar meu benefício* (incluir ganhos de ação trabalhista no cálculo)
+7️⃣ *Preciso de ajuda com mídias sociais* — parceria SmartAdv (gestão, conteúdo, presença digital)
+8️⃣ *Outro assunto*
 
 Responda com o número ou descreva sua situação.`;
 
@@ -307,13 +352,14 @@ export function findCase(id) {
 
 export function detectCaseFromText(text) {
   const trimmed = String(text || '').trim();
-  const numeric = trimmed.match(/^([1-7])\b/);
+  const numeric = trimmed.match(/^([1-8])\b/);
   if (numeric) {
     const idx = Number(numeric[1]) - 1;
     return CASE_TYPE_IDS[idx] || null;
   }
   const lower = trimmed.toLowerCase();
   const order = [
+    'revisao_aposentadoria',
     'aposentadoria_invalidez',
     'restabelecimento_auxilio',
     'planejamento_previdenciario',

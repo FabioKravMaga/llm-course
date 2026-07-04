@@ -1,6 +1,6 @@
 # WhatsApp + Claude Bot — Setup (11 passos)
 
-Bot de captação jurídica via WhatsApp para o escritório **Machado Deveza Advogados Associados**. Atende as 6 áreas do escritório (golpe/Pix, vínculo trabalhista, restabelecimento de auxílio, aposentadoria por invalidez, planejamento previdenciário, mídias sociais + "outro"), envia a tese jurídica pronta por área, cotiza pelo modelo de honorários certo (êxito / fixo / mensal), gera o contrato em PDF e envia para assinatura digital. Quando o cliente fica em silêncio, faz follow-ups nos dias 1, 3, 7 e 14 — no dia 14 se despede e marca como perdido.
+Bot de captação jurídica via WhatsApp para o escritório **Machado Deveza Advogados Associados**. Atende as 7 áreas do escritório (golpe/Pix, vínculo trabalhista, restabelecimento de auxílio, aposentadoria por invalidez, planejamento previdenciário, revisão de aposentadoria, mídias sociais SmartAdv + "outro"), envia a tese jurídica pronta por área, cotiza pelo modelo de honorários certo (êxito / fixo / mensal), gera o contrato em PDF e envia para assinatura digital. Quando o cliente fica em silêncio, faz follow-ups nos dias 1, 3, 7 e 14 — no dia 14 se despede e marca como perdido.
 
 Stack: **Evolution API (Docker) → Node.js webhook → Anthropic Claude (tools) → SQLite (funil por número) → PM2 → ZapSign (assinatura)**.
 
@@ -16,7 +16,7 @@ WhatsApp → Evolution API → /webhook → Bot → Claude (Opus 4.8) ⟷ tools 
 
 | Estágio | O que acontece |
 |---|---|
-| `new` | Primeiro contato. Claude cumprimenta e chama `send_menu` (6+1 áreas numeradas). |
+| `new` | Primeiro contato. Claude cumprimenta e chama `send_menu` (7+1 áreas numeradas). |
 | `qualifying` | Cliente escolhe a área (número ou descrição). Claude chama `send_thesis(case_type)` e coleta os dados que a tese pede. |
 | `proposal` | Claude chama `send_proposal()` — envia texto pronto do escritório com o modelo de honorários certo para a área. Pede nome completo. |
 | `contract` | Após aceite verbal + nome, `send_contract()` gera PDF e envia link de assinatura. |
@@ -32,8 +32,9 @@ WhatsApp → Evolution API → /webhook → Bot → Claude (Opus 4.8) ⟷ tools 
 | 3 | `restabelecimento_auxilio` | Percentual sobre atrasados |
 | 4 | `aposentadoria_invalidez` | Percentual sobre retroativos |
 | 5 | `planejamento_previdenciario` | Valor fixo pelo estudo |
-| 6 | `midias_sociais` | Plano mensal |
-| 7 | `outro` | A definir após análise |
+| 6 | `revisao_aposentadoria` | Percentual sobre diferenças retroativas |
+| 7 | `midias_sociais` (parceria SmartAdv) | Plano mensal |
+| 8 | `outro` | A definir após análise |
 
 ## Follow-up
 

@@ -9,7 +9,7 @@ export const tools = [
   {
     name: 'send_menu',
     description:
-      'Envia ao cliente o menu numerado das 7 áreas de atuação do escritório. Chame apenas na primeiríssima interação (stage=new) ou quando o cliente pedir para começar de novo.',
+      'Envia ao cliente o menu numerado das 8 áreas de atuação do escritório. Chame apenas na primeiríssima interação (stage=new) ou quando o cliente pedir para começar de novo.',
     input_schema: { type: 'object', properties: {} }
   },
   {

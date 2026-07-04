@@ -1,6 +1,6 @@
 # whatsapp-openai-bot
 
-Bot de **captação jurídica via WhatsApp** para o escritório **Machado Deveza Advogados Associados**. Leva o cliente do primeiro "oi" até o **contrato de honorários assinado digitalmente**, atendendo as 6 áreas do escritório com teses jurídicas prontas e modelos de honorários específicos por área (êxito / fixo / mensal). Usa **Anthropic Claude** com function calling para conduzir o funil, [Evolution API](https://github.com/EvolutionAPI/evolution-api) como bridge do WhatsApp, ZapSign para assinatura, e um scheduler de follow-ups (dias 1, 3, 7, 14) para recuperar clientes silenciosos.
+Bot de **captação jurídica via WhatsApp** para o escritório **Machado Deveza Advogados Associados**. Leva o cliente do primeiro "oi" até o **contrato de honorários assinado digitalmente**, atendendo as 7 áreas do escritório com teses jurídicas prontas e modelos de honorários específicos por área (êxito / fixo / mensal). Usa **Anthropic Claude** com function calling para conduzir o funil, [Evolution API](https://github.com/EvolutionAPI/evolution-api) como bridge do WhatsApp, ZapSign para assinatura, e um scheduler de follow-ups (dias 1, 3, 7, 14) para recuperar clientes silenciosos.
 
 > O nome do diretório (`whatsapp-openai-bot`) ficou da v1 — desde a v2 o backend é **Anthropic Claude**.
 
@@ -94,8 +94,9 @@ Definidas em `src/cases.js` — edite lá para ajustar tese, proposta, modelo de
 3. `restabelecimento_auxilio` — auxílio-doença cortado pelo INSS. Honorários: percentual sobre atrasados.
 4. `aposentadoria_invalidez` — conversão para aposentadoria permanente. Honorários: percentual sobre retroativos.
 5. `planejamento_previdenciario` — estudo de aposentadoria. Honorários: valor fixo pelo estudo.
-6. `midias_sociais` — gestão e conteúdo digital. Honorários: plano mensal.
-7. `outro` — a definir após análise da equipe.
+6. `revisao_aposentadoria` — revisão do benefício com inclusão de ganhos de ação trabalhista no cálculo. Honorários: percentual sobre as diferenças retroativas.
+7. `midias_sociais` — gestão e conteúdo digital, em parceria com a **SmartAdv**. Honorários: plano mensal.
+8. `outro` — a definir após análise da equipe.
 
 ## Follow-up automático
 
@@ -111,7 +112,7 @@ Padrão: **1d → 3d → 7d → 14d**. No 14º dia manda a despedida ("não ser 
 
 | Tool | Quando o Claude chama | Efeito |
 |---|---|---|
-| `send_menu` | Primeiro contato | Envia menu numerado das 7 áreas |
+| `send_menu` | Primeiro contato | Envia menu numerado das 8 áreas |
 | `send_thesis` | Após identificar `case_type` | Envia tese jurídica pronta da área (2 mensagens) |
 | `update_lead` | A cada dado novo | Grava case_type, nome, resumo, urgência |
 | `set_stage` | Ao avançar o funil | Atualiza estágio |
