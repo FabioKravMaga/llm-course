@@ -14,9 +14,10 @@ const parseDelays = (raw, fallback) => {
     .filter((n) => Number.isFinite(n) && n > 0);
 };
 
-const FOUR_HOURS = 4 * 60 * 60 * 1000;
 const ONE_DAY = 24 * 60 * 60 * 1000;
-const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+const THREE_DAYS = 3 * ONE_DAY;
+const SEVEN_DAYS = 7 * ONE_DAY;
+const FOURTEEN_DAYS = 14 * ONE_DAY;
 
 export const config = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
@@ -36,11 +37,16 @@ export const config = {
   followUp: {
     enabled: process.env.FOLLOWUP_ENABLED !== 'false',
     scanIntervalMs: Number(process.env.FOLLOWUP_SCAN_INTERVAL_MS || 5 * 60 * 1000),
-    delaysMs: parseDelays(process.env.FOLLOWUP_DELAYS_MS, [FOUR_HOURS, ONE_DAY, THREE_DAYS])
+    delaysMs: parseDelays(process.env.FOLLOWUP_DELAYS_MS, [
+      ONE_DAY,
+      THREE_DAYS,
+      SEVEN_DAYS,
+      FOURTEEN_DAYS
+    ])
   },
 
   lawyer: {
-    name: process.env.LAWYER_NAME || 'Escritório de Advocacia',
+    name: process.env.LAWYER_NAME || 'Machado Deveza Advogados Associados',
     oab: process.env.LAWYER_OAB || '',
     document: process.env.LAWYER_DOCUMENT || '',
     address: process.env.LAWYER_ADDRESS || '',

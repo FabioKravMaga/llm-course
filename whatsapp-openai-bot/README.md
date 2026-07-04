@@ -1,6 +1,6 @@
 # whatsapp-openai-bot
 
-Bot de **captação jurídica via WhatsApp** que leva o cliente do primeiro "oi" até o **contrato de honorários assinado digitalmente** — sem intervenção humana. Usa **Anthropic Claude** com function calling para conduzir o funil, [Evolution API](https://github.com/EvolutionAPI/evolution-api) como bridge do WhatsApp, ZapSign para assinatura, e um scheduler de follow-ups para recuperar clientes silenciosos.
+Bot de **captação jurídica via WhatsApp** para o escritório **Machado Deveza Advogados Associados**. Leva o cliente do primeiro "oi" até o **contrato de honorários assinado digitalmente**, atendendo as 6 áreas do escritório com teses jurídicas prontas e modelos de honorários específicos por área (êxito / fixo / mensal). Usa **Anthropic Claude** com function calling para conduzir o funil, [Evolution API](https://github.com/EvolutionAPI/evolution-api) como bridge do WhatsApp, ZapSign para assinatura, e um scheduler de follow-ups (dias 1, 3, 7, 14) para recuperar clientes silenciosos.
 
 > O nome do diretório (`whatsapp-openai-bot`) ficou da v1 — desde a v2 o backend é **Anthropic Claude**.
 
@@ -73,20 +73,33 @@ whatsapp-openai-bot/
     ├── server.js            # Express: /webhook, /sign-webhook, /health
     ├── config.js
     ├── prompt.js            # System prompt do bot (edite para customizar)
+    ├── cases.js             # Base de conhecimento das 6 áreas do escritório
     ├── handler.js           # Parser + orquestração inbound
-    ├── followup.js          # Scheduler de follow-ups por estágio
+    ├── followup.js          # Scheduler dias 1/3/7/14 com ganchos por área
     ├── tools.js             # Tool schemas + dispatcher
     ├── claude.js            # Cliente Anthropic com loop de tool use + prompt caching
     ├── evolution.js         # Cliente Evolution API
-    ├── contract.js          # Geração de PDF (pdfkit)
+    ├── contract.js          # Geração de PDF (pdfkit) com honorários por área
     ├── signature.js         # ZapSign + provedor mock
     ├── db.js                # SQLite (leads + histórico de mensagens)
     └── logger.js
 ```
 
+## Áreas atendidas
+
+Definidas em `src/cases.js` — edite lá para ajustar tese, proposta, modelo de honorários e ganchos de follow-up.
+
+1. `golpe_pix` — golpe/fraude bancária (Pix, boleto, clonagem). Honorários: apenas em êxito.
+2. `vinculo_trabalhista` — reconhecimento de vínculo sem carteira. Honorários: percentual sobre o recebido.
+3. `restabelecimento_auxilio` — auxílio-doença cortado pelo INSS. Honorários: percentual sobre atrasados.
+4. `aposentadoria_invalidez` — conversão para aposentadoria permanente. Honorários: percentual sobre retroativos.
+5. `planejamento_previdenciario` — estudo de aposentadoria. Honorários: valor fixo pelo estudo.
+6. `midias_sociais` — gestão e conteúdo digital. Honorários: plano mensal.
+7. `outro` — a definir após análise da equipe.
+
 ## Follow-up automático
 
-Padrão: **4h → 24h → 72h** e então marca como `lost`. Configurável via `FOLLOWUP_DELAYS_MS`. Mensagens variam por estágio em `src/followup.js`.
+Padrão: **1d → 3d → 7d → 14d**. No 14º dia manda a despedida ("não ser inconveniente") e marca como `lost`. Mensagens variam por *dia* (o que dizer) e por *área* (prova social + urgência específicas). Configurável via `FOLLOWUP_DELAYS_MS`; mensagens em `src/followup.js`.
 
 ## Comandos em chat
 
@@ -98,10 +111,12 @@ Padrão: **4h → 24h → 72h** e então marca como `lost`. Configurável via `F
 
 | Tool | Quando o Claude chama | Efeito |
 |---|---|---|
-| `update_lead` | A cada dado novo | Grava nome, tipo de caso, resumo, urgência |
+| `send_menu` | Primeiro contato | Envia menu numerado das 7 áreas |
+| `send_thesis` | Após identificar `case_type` | Envia tese jurídica pronta da área (2 mensagens) |
+| `update_lead` | A cada dado novo | Grava case_type, nome, resumo, urgência |
 | `set_stage` | Ao avançar o funil | Atualiza estágio |
-| `send_proposal` | Quando pronto para cotar | Envia proposta formatada + persiste valor/condições |
-| `send_contract` | Quando cliente aceita verbalmente | Gera PDF → ZapSign → manda link |
+| `send_proposal` | Quando pronto para cotar | Envia proposta pronta do escritório com modelo de honorários certo para a área |
+| `send_contract` | Após aceite + nome | Gera PDF → ZapSign → manda link |
 | `mark_as_lost` | Desistência / fora de escopo | Encerra o lead |
 
 ## Provedor de assinatura

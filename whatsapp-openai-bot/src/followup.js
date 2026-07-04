@@ -2,32 +2,13 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { dueFollowUps, getLead, updateLead } from './db.js';
 import { runFollowUp, isBusy } from './handler.js';
+import { CASES, findCase } from './cases.js';
 
-const messagesByStage = {
-  new: [
-    'Olá! Vi que paramos a conversa. Posso te ajudar com sua questão jurídica?',
-    'Oi! Ainda está por aí? Se quiser, podemos retomar quando for melhor para você.',
-    'Sem problemas se não for o momento. Estou à disposição quando precisar.'
-  ],
-  qualifying: [
-    'Oi! Para te enviar uma proposta adequada, ainda preciso entender melhor o seu caso. Pode me passar mais detalhes?',
-    'Tudo bem? Estou aqui para te ajudar a avaliar sua situação. Quer continuar de onde paramos?',
-    'Vou deixar nosso atendimento em standby. Quando quiser retomar, é só me chamar por aqui.'
-  ],
-  proposal: [
-    'Tudo certo com a proposta de honorários que enviei? Posso esclarecer qualquer dúvida sobre valor ou condições.',
-    'Aproveitando, a proposta segue valendo. Posso ajustar alguma condição para facilitar para você?',
-    'Vou aguardar seu retorno sobre a proposta. Se preferir reagendar, me avise.'
-  ],
-  contract: [
-    'O contrato de honorários está te esperando para assinatura. Posso te ajudar a finalizar?',
-    'Oi! Te enviei o link do contrato. Está com alguma dificuldade para assinar?',
-    'Vou aguardar a assinatura. Se preferir outro formato ou tiver dúvidas, me avise.'
-  ]
-};
+const LOST_MESSAGE = `Esta será minha última mensagem para não ser inconveniente. 🙏
 
-const LOST_MESSAGE =
-  'Sem problemas, vou encerrar esse atendimento por aqui. Se mudar de ideia, é só me chamar — estarei à disposição.';
+Se em algum momento quiser retomar a conversa, estarei aqui à disposição.
+
+Abraço, ${config.lawyer.name}.`;
 
 let timer = null;
 
@@ -78,13 +59,43 @@ async function processDue() {
   }
 }
 
-async function sendOne(lead) {
-  const stage = lead.stage in messagesByStage ? lead.stage : 'new';
-  const idx = Math.min(lead.follow_up_count, messagesByStage[stage].length - 1);
-  const message = messagesByStage[stage][idx];
+function buildMessage(attempt, lead) {
+  const firstName = lead.client_name ? String(lead.client_name).split(' ')[0] : null;
+  const p = firstName ? `${firstName}, ` : '';
+  const c = findCase(lead.case_type) || CASES.golpe_pix;
+  const socialProof = c.followUp?.socialProof || '';
+  const urgency = c.followUp?.urgency || '';
 
+  switch (attempt) {
+    case 1:
+      return `Oi${firstName ? `, ${firstName}` : ''}! 👋 Passei para saber se ficou alguma dúvida sobre o que conversamos.
+
+A análise inicial não tem custo nenhum — se quiser conversar mais, estou por aqui.`;
+
+    case 2:
+      return `${firstName ? firstName + ', s' : 'S'}ó um retorno rápido. ⚖️
+
+Para você ter uma referência: ${socialProof}.
+
+Se quiser saber como funcionaria no seu caso, me chama.`;
+
+    case 3:
+      return `${p}passando por aqui porque o tempo importa no seu caso. ⏰
+
+${urgency ? urgency.charAt(0).toUpperCase() + urgency.slice(1) + '.' : ''}
+
+Se quiser que eu analise seu caso essa semana, posso priorizar. É só me avisar.`;
+
+    default:
+      return LOST_MESSAGE;
+  }
+}
+
+async function sendOne(lead) {
   const maxAttempts = config.followUp.delaysMs.length;
-  const isFinal = lead.follow_up_count + 1 >= maxAttempts;
+  const attempt = lead.follow_up_count + 1;
+  const isFinal = attempt >= maxAttempts;
+  const message = buildMessage(attempt, lead);
 
   try {
     await runFollowUp(lead, message);
@@ -93,15 +104,11 @@ async function sendOne(lead) {
     return;
   }
 
-  const nowCount = lead.follow_up_count + 1;
   if (isFinal) {
-    try {
-      await runFollowUp(getLead(lead.phone), LOST_MESSAGE);
-    } catch {}
     updateLead(lead.phone, {
       stage: 'lost',
       lost_reason: 'Sem resposta após follow-ups',
-      follow_up_count: nowCount,
+      follow_up_count: attempt,
       follow_up_next_at: null,
       last_outbound_at: Date.now()
     });
@@ -110,8 +117,8 @@ async function sendOne(lead) {
   }
 
   updateLead(lead.phone, {
-    follow_up_count: nowCount,
+    follow_up_count: attempt,
     last_outbound_at: Date.now()
   });
-  scheduleNextFollowUp(lead.phone, nowCount);
+  scheduleNextFollowUp(lead.phone, attempt);
 }

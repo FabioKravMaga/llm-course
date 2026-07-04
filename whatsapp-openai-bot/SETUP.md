@@ -1,6 +1,6 @@
 # WhatsApp + Claude Bot — Setup (11 passos)
 
-Bot de captação jurídica via WhatsApp que **qualifica, propõe honorários, gera contrato em PDF, envia para assinatura digital e fecha o atendimento automaticamente**. Quando o cliente fica em silêncio, o bot faz follow-ups programados; se não responder, marca como perdido.
+Bot de captação jurídica via WhatsApp para o escritório **Machado Deveza Advogados Associados**. Atende as 6 áreas do escritório (golpe/Pix, vínculo trabalhista, restabelecimento de auxílio, aposentadoria por invalidez, planejamento previdenciário, mídias sociais + "outro"), envia a tese jurídica pronta por área, cotiza pelo modelo de honorários certo (êxito / fixo / mensal), gera o contrato em PDF e envia para assinatura digital. Quando o cliente fica em silêncio, faz follow-ups nos dias 1, 3, 7 e 14 — no dia 14 se despede e marca como perdido.
 
 Stack: **Evolution API (Docker) → Node.js webhook → Anthropic Claude (tools) → SQLite (funil por número) → PM2 → ZapSign (assinatura)**.
 
@@ -12,20 +12,32 @@ WhatsApp → Evolution API → /webhook → Bot → Claude (Opus 4.8) ⟷ tools 
                                                               /sign-webhook → lead = signed
 ```
 
-## Funil
+## Funil e áreas
 
 | Estágio | O que acontece |
 |---|---|
-| `new` | Primeiro contato. Claude cumprimenta e abre. |
-| `qualifying` | Coleta nome, tipo de caso, resumo, urgência. |
-| `proposal` | Envia proposta (valor, condições, escopo) via tool `send_proposal`. |
-| `contract` | Gera PDF e envia link de assinatura (`send_contract`). |
-| `signed` | Marcado automaticamente pelo webhook da ZapSign. |
+| `new` | Primeiro contato. Claude cumprimenta e chama `send_menu` (6+1 áreas numeradas). |
+| `qualifying` | Cliente escolhe a área (número ou descrição). Claude chama `send_thesis(case_type)` e coleta os dados que a tese pede. |
+| `proposal` | Claude chama `send_proposal()` — envia texto pronto do escritório com o modelo de honorários certo para a área. Pede nome completo. |
+| `contract` | Após aceite verbal + nome, `send_contract()` gera PDF e envia link de assinatura. |
+| `signed` | Marcado pelo webhook da ZapSign. |
 | `lost` | `mark_as_lost` ou esgotamento dos follow-ups. |
+
+**Áreas atendidas** (edite em `src/cases.js`):
+
+| # | case_type | Modelo de honorários |
+|---|---|---|
+| 1 | `golpe_pix` | Apenas em caso de êxito |
+| 2 | `vinculo_trabalhista` | Percentual sobre o recebido |
+| 3 | `restabelecimento_auxilio` | Percentual sobre atrasados |
+| 4 | `aposentadoria_invalidez` | Percentual sobre retroativos |
+| 5 | `planejamento_previdenciario` | Valor fixo pelo estudo |
+| 6 | `midias_sociais` | Plano mensal |
+| 7 | `outro` | A definir após análise |
 
 ## Follow-up
 
-Padrão: **4h → 24h → 72h** e então marca como `lost`. Mensagens variam por estágio (em `src/followup.js`). Cada resposta do cliente zera o contador.
+Padrão: **1 dia → 3 dias → 7 dias → 14 dias**. No 14º dia envia despedida ("não ser inconveniente") e marca como `lost`. Mensagem varia por *dia* e por *case_type* (prova social + urgência específicas de cada área — em `src/followup.js`). Resposta do cliente zera o contador.
 
 ---
 
@@ -83,12 +95,12 @@ EVOLUTION_API_KEY=$(openssl rand -hex 32)
 EVOLUTION_INSTANCE=whatsapp-bot
 WEBHOOK_TOKEN=$(openssl rand -hex 32)
 
-LAWYER_NAME=Seu Escritório
+LAWYER_NAME=Machado Deveza Advogados Associados
 LAWYER_OAB=SP 000.000
-LAWYER_DOCUMENT=000.000.000-00
+LAWYER_DOCUMENT=00.000.000/0001-00
 LAWYER_ADDRESS=Rua Exemplo, 123 — São Paulo/SP
-LAWYER_EMAIL=fabioadvogado@gmail.com
-LAWYER_PIX_KEY=fabioadvogado@gmail.com
+LAWYER_EMAIL=contato@machadodeveza.com.br
+LAWYER_PIX_KEY=contato@machadodeveza.com.br
 
 SIGNATURE_PROVIDER=mock   # troque para zapsign quando configurar
 ```
