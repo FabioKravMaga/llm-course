@@ -143,6 +143,25 @@ Pacote fechado vende mais rápido que orçamento aberto. Sugestão de estrutura 
 
 -----
 
+## 6. Frente Tecnologia — automação e IA
+
+> **Oferta horizontal (qualquer negócio).** Diferente das seções 1–5, que são nichadas em advocacia, esta frente atende qualquer PME — comércio, serviços, clínicas, escritórios. É o "braço de produto" que resolve operação, não só marketing.
+
+O que separa um negócio pequeno de um negócio que escala é não depender de você para cada tarefa. Colocamos inteligência artificial para atender, qualificar e organizar.
+
+- ✓ **Recepcionista de WhatsApp com IA** — responde, agenda e qualifica 24/7
+- ✓ **Agente de pré-venda (SDR)** que filtra e encaminha só os contatos quentes
+- ✓ **Automação de fluxos** (lembretes, follow-up, respostas padrão)
+- ✓ **Painéis e sistemas sob medida** quando o negócio pedir (SaaS interno)
+
+### Diferencial
+
+Essas automações são as mesmas ferramentas que usamos na nossa própria operação. Você recebe algo testado, não um experimento.
+
+> **Como isso conversa com o Smart ADV AI:** para advogados, a automação entra respeitando os limites de publicidade da OAB (o recepcionista IA informa e agenda, sem captação indevida). Para os demais nichos, é oferta livre — vende como produto próprio, sem depender do posicionamento jurídico.
+
+-----
+
 ## Próximos passos sugeridos
 
 1. Atualizar as duas bios (copiar/colar acima).
